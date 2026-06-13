@@ -326,10 +326,11 @@
 
 <div class="header">
   <span style="font-size:24px;">☕</span>
-  <div>
+  <div style="flex:1">
     <div class="header-title">КоШ — Итоги дня</div>
     <div class="header-sub">Учёт выручки и прибыли</div>
   </div>
+  <div id="sync-indicator" style="font-size:12px;color:var(--text2);white-space:nowrap;">⏳ Подключение...</div>
 </div>
 
 <div class="date-bar">
@@ -1138,34 +1139,106 @@ async function getAiAnalysis() {
 // ============================================================
 // СОХРАНЕНИЕ / УДАЛЕНИЕ / ИСТОРИЯ
 // ============================================================
-function saveReport() {
-  if (!lastResult) return;
-  const key     = 'kosh_reports';
-  const reports = JSON.parse(localStorage.getItem(key)||'[]');
-  const ex      = reports.findIndex(r => r.date === lastResult.date);
-  if (ex >= 0) reports[ex] = lastResult; else reports.unshift(lastResult);
-  localStorage.setItem(key, JSON.stringify(reports.slice(0,120)));
-  alert('✅ Отчёт сохранён!');
+// ============================================================
+// SUPABASE — синхронизация между телефонами
+// ============================================================
+const SB_URL = 'https://iqlwrpjwpdphhhooifux.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxbHdycGp3cGRwaGhob29pZnV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNzI4MTcsImV4cCI6MjA5Njk0ODgxN30.6vAG6ezyS3bYiTeluMEvKsNxF1FUe-zh73mpA1qAIFU';
+
+async function sbFetch(path, method='GET', body=null) {
+  const opts = {
+    method,
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': method === 'POST' ? 'resolution=merge-duplicates,return=minimal' : ''
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(SB_URL + path, opts);
+  if (method === 'GET') return res.json();
+  return res;
 }
 
-function deleteReport(idx) {
-  if (!confirm('Удалить этот отчёт?')) return;
-  const key     = 'kosh_reports';
-  const reports = JSON.parse(localStorage.getItem(key)||'[]');
-  reports.splice(idx, 1);
-  localStorage.setItem(key, JSON.stringify(reports));
+// Кэш отчётов в памяти (чтобы быстро работать без лишних запросов)
+let cachedReports = null;
+
+async function getReports() {
+  if (cachedReports) return cachedReports;
+  try {
+    const data = await sbFetch('/rest/v1/reports?select=*&order=date.desc&limit=200');
+    if (Array.isArray(data)) {
+      cachedReports = data.map(row => ({ ...row.data, _id: row.id, date: row.date }));
+      return cachedReports;
+    }
+  } catch(e) {}
+  // fallback: localStorage
+  return JSON.parse(localStorage.getItem('kosh_reports')||'[]');
+}
+
+async function saveReport() {
+  if (!lastResult) return;
+  const btn = document.querySelector('.save-btn');
+  const orig = btn?.textContent;
+  if (btn) btn.textContent = '⏳ Сохраняю...';
+
+  // Всегда сохраняем локально как резерв
+  const local = JSON.parse(localStorage.getItem('kosh_reports')||'[]');
+  const ex = local.findIndex(r => r.date === lastResult.date);
+  if (ex >= 0) local[ex] = lastResult; else local.unshift(lastResult);
+  localStorage.setItem('kosh_reports', JSON.stringify(local.slice(0,120)));
+
+  try {
+    const res = await sbFetch('/rest/v1/reports', 'POST', {
+      date: lastResult.date,
+      data: lastResult
+    });
+    if (res.ok || res.status === 200 || res.status === 201 || res.status === 204) {
+      cachedReports = null; // сбросить кэш
+      if (btn) { btn.textContent = '✅ Сохранено!'; setTimeout(()=>{ btn.textContent = orig; },2000); }
+    } else {
+      const txt = await res.text().catch(()=>'');
+      throw new Error(txt);
+    }
+  } catch(e) {
+    if (btn) btn.textContent = orig;
+    alert('⚠️ Ошибка синхронизации.\nСохранено локально.\n\n' + e.message);
+  }
+}
+
+async function deleteReport(id) {
+  if (!confirm('Удалить этот отчёт у всех?')) return;
+  cachedReports = null;
+
+  // Удаляем из localStorage
+  const local = JSON.parse(localStorage.getItem('kosh_reports')||'[]');
+  const filtered = local.filter(r => r.date !== id && r._id !== id);
+  localStorage.setItem('kosh_reports', JSON.stringify(filtered));
+
+  try {
+    // id может быть UUID (supabase) или date строка
+    await sbFetch(`/rest/v1/reports?id=eq.${encodeURIComponent(id)}`, 'DELETE');
+  } catch(e) {}
   renderHistory();
 }
 
-function renderHistory() {
-  const reports = JSON.parse(localStorage.getItem('kosh_reports')||'[]');
+async function renderHistory() {
   const el = document.getElementById('history-content');
+  el.innerHTML = '<div class="empty-state"><div class="icon"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div><p style="margin-top:12px">Загружаю...</p></div>';
+
+  const reports = await getReports();
+
   if (!reports.length) {
     el.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>История пуста. Сохраните первый отчёт.</p></div>';
     return;
   }
+
   el.innerHTML = `
-    <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">Сохранено: ${reports.length} отчётов</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <span style="font-size:12px;color:var(--text2);">Отчётов: ${reports.length}</span>
+      <button onclick="cachedReports=null;renderHistory()" style="background:none;border:1px solid var(--border2);color:var(--text2);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">🔄 Обновить</button>
+    </div>
     <div class="section-block">
       <div style="overflow-x:auto;">
         <table class="breakdown-table" style="width:100%">
@@ -1178,21 +1251,22 @@ function renderHistory() {
             <th style="text-align:right">Ср. чек</th>
             <th></th>
           </tr>
-          ${reports.map((rep,i) => {
+          ${reports.map((rep) => {
             const d = rep.date ? new Date(rep.date+'T00:00:00').toLocaleDateString('ru-RU') : '—';
             const profColor = (rep.netProfit||0)>=0 ? 'var(--green)' : 'var(--red)';
+            const delId = rep._id || rep.date;
             return `<tr>
               <td><b>${d}</b></td>
-              <td>${rep.staff||'—'}</td>
+              <td style="font-size:12px">${rep.staff||'—'}</td>
               <td style="text-align:right">${rep.visitors||'—'}</td>
               <td style="text-align:right">${fmt(rep.totalRevenue)}</td>
               <td style="text-align:right;color:${profColor}"><b>${fmt(rep.netProfit)}</b></td>
-              <td style="text-align:right">${rep.margin.toFixed(1)}%</td>
+              <td style="text-align:right">${(rep.margin||0).toFixed(1)}%</td>
               <td style="text-align:right">${fmt(rep.avgCheck)}</td>
               <td>
                 <div class="history-row-btns">
-                  <button class="btn-open" onclick="loadReport(${i})">Открыть</button>
-                  <button class="btn-del" onclick="deleteReport(${i})" title="Удалить">🗑</button>
+                  <button class="btn-open" onclick="loadFromCache('${rep.date}')">Открыть</button>
+                  <button class="btn-del" onclick="deleteReport('${delId}')" title="Удалить">🗑</button>
                 </div>
               </td>
             </tr>`;
@@ -1200,6 +1274,12 @@ function renderHistory() {
         </table>
       </div>
     </div>`;
+}
+
+function loadFromCache(date) {
+  const rep = (cachedReports||[]).find(r => r.date === date)
+           || JSON.parse(localStorage.getItem('kosh_reports')||'[]').find(r => r.date === date);
+  if (rep) { lastResult = rep; renderResults(lastResult); switchTab('results'); }
 }
 
 function loadReport(idx) {
@@ -1217,8 +1297,10 @@ function getWeekStart(date) {
   d.setDate(d.getDate()-day+1); return d.toISOString().split('T')[0];
 }
 
-function renderPeriod(period) {
-  const reports = JSON.parse(localStorage.getItem('kosh_reports')||'[]');
+async function renderPeriod(period) {
+  const el2 = document.getElementById(period+'-content');
+  el2.innerHTML = '<div class="empty-state"><div class="icon"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div><p style="margin-top:12px">Загружаю...</p></div>';
+  const reports = await getReports();
   const el = document.getElementById(period+'-content');
   if (!reports.length) {
     el.innerHTML = '<div class="empty-state"><div class="icon">'+(period==='week'?'📆':'🗓️')+'</div><p>Нет сохранённых отчётов</p></div>';
@@ -1332,6 +1414,28 @@ function renderPeriod(period) {
 rebuildAll();
 renderStaffChips();
 document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+
+// Проверяем подключение к Supabase при старте
+(async () => {
+  const indicator = document.getElementById('sync-indicator');
+  try {
+    const res = await sbFetch('/rest/v1/reports?select=id&limit=1');
+    if (Array.isArray(res)) {
+      if (indicator) { indicator.textContent = '🟢 Синхронизация'; indicator.style.color = 'var(--green)'; }
+    } else {
+      // Таблица не существует — показать инструкцию
+      if (indicator) { indicator.textContent = '🔴 Нужна настройка БД'; indicator.style.color = 'var(--red)'; }
+      if (!localStorage.getItem('kosh_db_setup_shown')) {
+        localStorage.setItem('kosh_db_setup_shown','1');
+        setTimeout(() => {
+          alert('⚙️ Нужно создать таблицу в Supabase.\n\nЗайди на supabase.com → твой проект → SQL Editor → вставь и выполни:\n\nCREATE TABLE IF NOT EXISTS reports (\n  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,\n  date text UNIQUE NOT NULL,\n  data jsonb NOT NULL,\n  created_at timestamptz DEFAULT now()\n);\nALTER TABLE reports ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "public_all" ON reports FOR ALL USING (true) WITH CHECK (true);');
+        }, 1000);
+      }
+    }
+  } catch(e) {
+    if (indicator) { indicator.textContent = '🔴 Офлайн'; indicator.style.color = 'var(--red)'; }
+  }
+})();
 </script>
 </body>
 </html>
