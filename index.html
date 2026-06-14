@@ -10,6 +10,7 @@
 <meta name="theme-color" content="#131210">
 <title>Итоги дня — КоШ</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg:        #131210;
@@ -74,19 +75,29 @@
   .section-header.collapsed .toggle-icon { transform: rotate(-90deg); }
   .section-body.hidden { display: none; }
 
-  /* ТАБЛИЦА МЕНЮ */
-  .col-header { display: grid; grid-template-columns: 1fr 76px 76px 72px 34px; background: var(--bg3); border-bottom: 1px solid var(--border); }
+  /* ТАБЛИЦА МЕНЮ — +/- кнопки */
+  .col-header { display: grid; grid-template-columns: 1fr 70px 70px 100px 34px; background: var(--bg3); border-bottom: 1px solid var(--border); }
   .col-header span { padding: 7px 8px; font-size: 10px; font-weight: 700; color: var(--text3); text-align: center; text-transform: uppercase; letter-spacing: 0.6px; }
   .col-header span:first-child { text-align: left; padding-left: 14px; }
 
-  .item-row { display: grid; grid-template-columns: 1fr 76px 76px 72px 34px; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.1s; }
+  .item-row { display: grid; grid-template-columns: 1fr 70px 70px 100px 34px; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.1s; }
   .item-row:last-child { border-bottom: none; }
   .item-row:hover { background: var(--card-hover); }
   .item-name { padding: 9px 14px; font-size: 13px; color: var(--text); }
   .item-price-cell, .item-cost-cell { padding: 6px 6px; font-size: 12px; color: var(--text2); text-align: center; border-left: 1px solid var(--border); }
-  .item-qty { padding: 5px 6px; border-left: 1px solid var(--border); }
-  .item-qty input { width: 100%; text-align: center; border: 1px solid var(--border2); border-radius: 8px; padding: 6px 4px; font-size: 16px; font-weight: 700; color: var(--text); background: var(--bg3); outline: none; }
-  .item-qty input:focus { border-color: var(--accent); background: var(--bg4); }
+  .item-qty { border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center; padding: 0; }
+  .qty-ctrl { display: flex; align-items: center; width: 100%; }
+  .qty-btn { background: none; border: none; color: var(--text2); font-size: 22px; font-weight: 300; cursor: pointer;
+    width: 30px; height: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: all 0.1s; line-height: 1; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .qty-btn:hover { color: var(--accent); }
+  .qty-btn:active { transform: scale(0.80); color: var(--accent); }
+  .qty-input { flex: 1; text-align: center; font-size: 15px; font-weight: 700; color: var(--text);
+    background: none; border: none; outline: none; width: 0; min-width: 0; padding: 0;
+    -moz-appearance: textfield; }
+  .qty-input::-webkit-inner-spin-button, .qty-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .qty-input.nz { color: var(--accent); }
+  .qty-input:focus { background: var(--bg4); border-radius: 4px; }
   .item-edit-btn { padding: 0 4px; display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); }
   .item-edit-btn button { background: none; border: none; color: var(--text3); font-size: 13px; cursor: pointer; padding: 4px; border-radius: 6px; line-height: 1; }
   .item-edit-btn button:hover { color: var(--accent); background: var(--bg4); }
@@ -102,7 +113,7 @@
 
   /* СВОЯ ПОЗИЦИЯ */
   .custom-rows-wrap { border-top: 1px dashed var(--border2); }
-  .custom-row { display: grid; grid-template-columns: 1fr 76px 76px 72px 34px; border-bottom: 1px solid var(--border); align-items: center; background: var(--bg); }
+  .custom-row { display: grid; grid-template-columns: 1fr 70px 70px 100px 34px; border-bottom: 1px solid var(--border); align-items: center; background: var(--bg); }
   .custom-name-cell { padding: 5px 8px 5px 14px; }
   .custom-price-cell { padding: 4px 5px; border-left: 1px solid var(--border); }
   .custom-name-cell input, .custom-price-cell input {
@@ -274,24 +285,16 @@
     .other-income { grid-template-columns: 1fr; }
     .metrics-grid { grid-template-columns: 1fr 1fr; }
 
-    /* Меню: скрываем С/С на мобиле — 3 колонки: название | цена | кол-во | кнопка */
-    .col-header  { grid-template-columns: 1fr 58px 62px 32px; }
-    .item-row    { grid-template-columns: 1fr 58px 62px 32px; }
+    /* Меню: скрываем С/С на мобиле */
+    .col-header  { grid-template-columns: 1fr 58px 86px 30px; }
+    .item-row    { grid-template-columns: 1fr 58px 86px 30px; }
     .item-cost-cell { display: none; }
     .col-header span:nth-child(3) { display: none; }
-
-    /* Кастомная строка: имя | цена | кол-во | удалить */
-    .custom-row { grid-template-columns: 1fr 60px 56px 30px; }
-    .custom-price-cell:nth-child(3) { display: none; } /* скрываем С/С */
-
-    /* edit-row тоже компактнее */
+    .custom-row { grid-template-columns: 1fr 58px 86px 30px; }
+    .custom-price-cell:nth-child(3) { display: none; }
     .edit-row { grid-template-columns: 1fr 62px 62px 62px 30px; }
-
-    .item-name { font-size: 13px; padding: 10px 10px; }
-    .item-price-cell { font-size: 12px; padding: 6px 4px; }
-    .item-qty { padding: 5px 4px; }
-    .item-qty input { font-size: 18px; font-weight: 700; padding: 7px 2px; border-radius: 8px; min-height: 40px; }
-    .item-edit-btn button { font-size: 16px; padding: 6px; min-width: 32px; min-height: 40px; }
+    .qty-btn { width: 28px; font-size: 20px; }
+    .qty-val { font-size: 15px; }
 
     .breakdown-table { font-size: 11px; }
     .breakdown-table th, .breakdown-table td { padding: 6px 6px; }
@@ -613,13 +616,36 @@ function pct(a, b) { return b > 0 ? (a/b*100).toFixed(1)+'%' : '—'; }
 // ============================================================
 // СТРОКИ МЕНЮ
 // ============================================================
+// qty хранится в JS-объекте, не в DOM-инпутах
+const QTY = {};
+function getQty(prefix, idx) { return QTY[`${prefix}_${idx}`] || 0; }
+function setQty(prefix, idx, val) {
+  val = Math.max(0, Math.round(val) || 0);
+  QTY[`${prefix}_${idx}`] = val;
+  const el = document.getElementById(`qv_${prefix}_${idx}`);
+  if (el) { el.value = val > 0 ? val : ''; el.className = 'qty-input' + (val > 0 ? ' nz' : ''); }
+}
+function incQty(prefix, idx) { setQty(prefix, idx, getQty(prefix, idx) + 1); }
+function decQty(prefix, idx) { setQty(prefix, idx, getQty(prefix, idx) - 1); }
+function onQtyInput(prefix, idx, el) {
+  const v = parseInt(el.value) || 0;
+  QTY[`${prefix}_${idx}`] = Math.max(0, v);
+  el.className = 'qty-input' + (v > 0 ? ' nz' : '');
+}
+
 function buildRows(containerId, items, prefix) {
   document.getElementById(containerId).innerHTML = items.map((item, i) => `
     <div class="item-row" id="menurow_${prefix}_${i}">
       <div class="item-name">${item.name}</div>
       <div class="item-price-cell" id="price_disp_${prefix}_${i}">${item.price} ₽</div>
       <div class="item-cost-cell" id="cost_disp_${prefix}_${i}">${item.cost > 0 ? item.cost + ' ₽' : '—'}</div>
-      <div class="item-qty"><input type="number" min="0" step="1" value="0" id="${prefix}_${i}" inputmode="numeric"></div>
+      <div class="item-qty">
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="decQty('${prefix}',${i})">−</button>
+          <input type="number" class="qty-input" id="qv_${prefix}_${i}" value="" placeholder="0" min="0" inputmode="numeric" oninput="onQtyInput('${prefix}',${i},this)">
+          <button class="qty-btn" onclick="incQty('${prefix}',${i})">+</button>
+        </div>
+      </div>
       <div class="item-edit-btn"><button onclick="toggleEditRow('${prefix}',${i})" title="Изменить">✏️</button></div>
     </div>`).join('');
 }
@@ -690,11 +716,6 @@ function addCustomRow(prefix) {
 }
 
 function removeCustomRow(id) { document.getElementById(`row_${id}`)?.remove(); }
-
-function getQty(prefix, idx) {
-  const el = document.getElementById(`${prefix}_${idx}`);
-  return el ? (parseInt(el.value) || 0) : 0;
-}
 
 function getCustomRows(prefix) {
   const wrap = document.getElementById(`custom-${prefix}`);
@@ -780,10 +801,12 @@ function calculate() {
   const grossProfit = totalRevenue - totalCost;
   const netProfit   = grossProfit - expenses;
   const margin      = totalRevenue > 0 ? (grossProfit / totalRevenue * 100) : 0;
-  const avgCheck    = visitors > 0 ? totalRevenue / visitors : (totalItems > 0 ? totalRevenue / totalItems : 0);
-  const avgCheckLabel = visitors > 0 ? 'посетителю' : 'позиции';
+  const avgCheckPerItem  = totalItems > 0 ? totalRevenue / totalItems : 0;
+  const avgCheckPerVisit = visitors > 0 ? totalRevenue / visitors : 0;
+  const avgCheck = avgCheckPerItem; // основной — на позицию (точный)
+  const avgCheckLabel = 'позиции';
 
-  lastResult = { date, totalRevenue, totalCost, grossProfit, netProfit, margin, avgCheck, avgCheckLabel, totalItems, expenses, cash, card, notes, catStats, soldItems, staff, visitors };
+  lastResult = { date, totalRevenue, totalCost, grossProfit, netProfit, margin, avgCheck, avgCheckPerItem, avgCheckPerVisit, avgCheckLabel, totalItems, expenses, cash, card, notes, catStats, soldItems, staff, visitors };
   renderResults(lastResult);
   switchTab('results');
 }
@@ -934,7 +957,7 @@ function renderResults(d) {
         <div>
           <div class="simple-stat-label">Посетителей</div>
           <div class="simple-stat-value">${d.visitors > 0 ? d.visitors : '—'}</div>
-          <div class="simple-stat-pct">Ср. чек: ${fmt(d.avgCheck)}</div>
+          <div class="simple-stat-pct">Ср. чек/поз: ${fmt(d.avgCheckPerItem)}${d.avgCheckPerVisit > 0 ? '<br>~' + fmt(d.avgCheckPerVisit) + '/посет.' : ''}</div>
         </div>
         <div>
           <div class="simple-stat-label">Позиций</div>
@@ -997,8 +1020,8 @@ function renderResults(d) {
       </div>
       <div class="metric-card">
         <div class="metric-label">Средний чек</div>
-        <div class="metric-value">${fmt(d.avgCheck)}</div>
-        <div class="metric-sub">на ${d.avgCheckLabel||'позицию'}</div>
+        <div class="metric-value">${fmt(d.avgCheckPerItem)}</div>
+        <div class="metric-sub">на позицию (точно)${d.avgCheckPerVisit > 0 ? '<br>~' + fmt(d.avgCheckPerVisit) + ' на посетителя' : ''}</div>
       </div>
     </div>
 
@@ -1032,8 +1055,8 @@ function renderResults(d) {
 
     <!-- ДЕТАЛИЗАЦИЯ -->
     <div class="section-block">
-      <div class="section-header" onclick="toggleSection(this)">📋 Детализация продаж<span class="toggle-icon">▼</span></div>
-      <div class="section-body">
+      <div class="section-header collapsed" onclick="toggleSection(this)">📋 Детализация продаж<span class="toggle-icon">▼</span></div>
+      <div class="section-body hidden">
         <div style="overflow-x:auto;padding:8px;">
           <table class="breakdown-table">
             <tr>
@@ -1072,16 +1095,17 @@ function renderResults(d) {
     </div>
 
     <!-- AI -->
-    <div class="ai-block">
-      <div class="chart-title">🤖 Анализ ИИ</div>
-      <div id="ai-content" style="margin-top:10px;color:var(--text2);font-size:14px;">Нажмите кнопку, чтобы получить аналитику</div>
-      <button class="ai-btn" onclick="getAiAnalysis()">✨ Получить анализ</button>
-    </div>
 
     ${d.notes ? `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:14px;color:var(--text);">📝 <b>Примечание:</b> ${d.notes}</div>` : ''}
+
+    <!-- ПОГОДА И СРАВНЕНИЕ -->
+    <div id="weather-compare-block"></div>
   `;
 
   document.getElementById('results-content').innerHTML = html;
+
+  // Погода
+  loadWeatherAndCompare(d);
 
   setTimeout(() => {
     const chartColors = ['#d4864a','#4caf72','#5a9fd4'];
@@ -1237,7 +1261,10 @@ async function renderHistory() {
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <span style="font-size:12px;color:var(--text2);">Отчётов: ${reports.length}</span>
-      <button onclick="cachedReports=null;renderHistory()" style="background:none;border:1px solid var(--border2);color:var(--text2);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">🔄 Обновить</button>
+      <div style="display:flex;gap:8px;">
+        <button onclick="exportExcel()" style="background:#2d7a3a;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;">📊 Экспорт Excel</button>
+        <button onclick="cachedReports=null;renderHistory()" style="background:none;border:1px solid var(--border2);color:var(--text2);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">🔄 Обновить</button>
+      </div>
     </div>
     <div class="section-block">
       <div style="overflow-x:auto;">
@@ -1409,8 +1436,244 @@ async function renderPeriod(period) {
 }
 
 // ============================================================
-// ИНИЦИАЛИЗАЦИЯ
+// ЭКСПОРТ В EXCEL (CSV совместимый — открывается в Excel)
 // ============================================================
+async function exportExcel() {
+  const reports = await getReports();
+  if (!reports.length) { alert('Нет данных для экспорта'); return; }
+
+  // Сортируем по дате
+  const sorted = [...reports].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+  // Лист 1 — все дни
+  const dayRows = [
+    ['Дата','День нед.','Дежурный','Посетители','Выручка','Себестоимость','Вал. прибыль','Маржа %','Расходы','Чист. прибыль','% прибыли','Позиций','Ср. чек/поз.','Примечания']
+  ];
+  const DAYS = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  sorted.forEach(rep => {
+    const d = rep.date ? new Date(rep.date+'T00:00:00') : null;
+    const margin = rep.totalRevenue > 0 ? (rep.grossProfit/rep.totalRevenue*100) : 0;
+    const netPct = rep.totalRevenue > 0 ? (rep.netProfit/rep.totalRevenue*100) : 0;
+    const avgChk = rep.totalItems > 0 ? rep.totalRevenue/rep.totalItems : 0;
+    dayRows.push([
+      rep.date||'',
+      d ? DAYS[d.getDay()] : '',
+      rep.staff||'',
+      rep.visitors||0,
+      Math.round(rep.totalRevenue||0),
+      Math.round(rep.totalCost||0),
+      Math.round(rep.grossProfit||0),
+      +margin.toFixed(1),
+      Math.round(rep.expenses||0),
+      Math.round(rep.netProfit||0),
+      +netPct.toFixed(1),
+      rep.totalItems||0,
+      Math.round(avgChk),
+      rep.notes||''
+    ]);
+  });
+
+  // Лист 2 — по неделям
+  const weeks = {};
+  sorted.forEach(rep => {
+    if (!rep.date) return;
+    const d = new Date(rep.date+'T00:00:00');
+    const day = d.getDay()||7;
+    const mon = new Date(d); mon.setDate(d.getDate()-day+1);
+    const key = mon.toISOString().split('T')[0];
+    if (!weeks[key]) weeks[key] = { days:0, visitors:0, revenue:0, grossProfit:0, expenses:0, netProfit:0 };
+    weeks[key].days++;
+    weeks[key].visitors += rep.visitors||0;
+    weeks[key].revenue  += rep.totalRevenue||0;
+    weeks[key].grossProfit += rep.grossProfit||0;
+    weeks[key].expenses += rep.expenses||0;
+    weeks[key].netProfit += rep.netProfit||0;
+  });
+  const weekRows = [['Неделя (пн)','Неделя (вс)','Дней','Посетители','Выручка','Вал. прибыль','Маржа %','Расходы','Чист. прибыль','% прибыли','Ср. выручка/день']];
+  Object.entries(weeks).sort(([a],[b])=>a.localeCompare(b)).forEach(([mon,w]) => {
+    const monD = new Date(mon+'T00:00:00');
+    const sunD = new Date(monD); sunD.setDate(monD.getDate()+6);
+    const m = w.revenue>0?(w.grossProfit/w.revenue*100):0;
+    const np = w.revenue>0?(w.netProfit/w.revenue*100):0;
+    weekRows.push([
+      mon, sunD.toISOString().split('T')[0], w.days, w.visitors,
+      Math.round(w.revenue), Math.round(w.grossProfit), +m.toFixed(1),
+      Math.round(w.expenses), Math.round(w.netProfit), +np.toFixed(1),
+      Math.round(w.revenue/w.days)
+    ]);
+  });
+
+  // Лист 3 — по месяцам
+  const months = {};
+  sorted.forEach(rep => {
+    if (!rep.date) return;
+    const key = rep.date.substring(0,7);
+    if (!months[key]) months[key] = { days:0, visitors:0, revenue:0, grossProfit:0, expenses:0, netProfit:0, items:0 };
+    months[key].days++;
+    months[key].visitors += rep.visitors||0;
+    months[key].revenue  += rep.totalRevenue||0;
+    months[key].grossProfit += rep.grossProfit||0;
+    months[key].expenses += rep.expenses||0;
+    months[key].netProfit += rep.netProfit||0;
+    months[key].items += rep.totalItems||0;
+  });
+  const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const monthRows = [['Месяц','Дней','Посетители','Выручка','Вал. прибыль','Маржа %','Расходы','Чист. прибыль','% прибыли','Ср. выручка/день','Ср. чек/поз.']];
+  Object.entries(months).sort(([a],[b])=>a.localeCompare(b)).forEach(([key,m]) => {
+    const [yr,mo] = key.split('-');
+    const name = `${MONTH_NAMES[parseInt(mo)-1]} ${yr}`;
+    const margin = m.revenue>0?(m.grossProfit/m.revenue*100):0;
+    const np = m.revenue>0?(m.netProfit/m.revenue*100):0;
+    const avgChk = m.items>0?m.revenue/m.items:0;
+    monthRows.push([
+      name, m.days, m.visitors, Math.round(m.revenue), Math.round(m.grossProfit),
+      +margin.toFixed(1), Math.round(m.expenses), Math.round(m.netProfit),
+      +np.toFixed(1), Math.round(m.revenue/m.days), Math.round(avgChk)
+    ]);
+  });
+
+  // Собираем в CSV с разделителем листов через ; и BOM
+  function toCsv(rows) {
+    return rows.map(r => r.map(v => {
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s;
+    }).join(',')).join('\n');
+  }
+
+  // Генерируем три отдельных CSV и упаковываем в один файл через разные секции
+  // Используем xlsx через SheetJS если доступен, иначе CSV
+  if (typeof XLSX !== 'undefined') {
+    const wb2 = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(dayRows), 'Все дни');
+    XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(weekRows), 'По неделям');
+    XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(monthRows), 'По месяцам');
+    XLSX.writeFile(wb2, 'КоШ_отчёты.xlsx');
+  } else {
+    // Fallback: три CSV в одном файле через пустые строки
+    const combined = [
+      '=== ВСЕ ДНИ ===', toCsv(dayRows), '',
+      '=== ПО НЕДЕЛЯМ ===', toCsv(weekRows), '',
+      '=== ПО МЕСЯЦАМ ===', toCsv(monthRows)
+    ].join('\n');
+    const blob = new Blob(['\uFEFF'+combined], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'КоШ_отчёты.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return;
+  }
+}
+
+// ============================================================
+// ПОГОДА
+// ============================================================
+async function loadWeatherAndCompare(d) {
+  const el = document.getElementById('weather-compare-block');
+  if (!el) return;
+
+  // Сравнение с прошлой неделей
+  let compareHtml = '';
+  try {
+    const reports = await getReports();
+    if (d.date && reports.length > 0) {
+      const cur = new Date(d.date + 'T00:00:00');
+      const weekAgo = new Date(cur); weekAgo.setDate(cur.getDate() - 7);
+      const waStr = weekAgo.toISOString().split('T')[0];
+      const prev = reports.find(r => r.date === waStr);
+      if (prev) {
+        const revDiff = d.totalRevenue - prev.totalRevenue;
+        const revPct  = prev.totalRevenue > 0 ? (revDiff / prev.totalRevenue * 100) : 0;
+        const profDiff = d.netProfit - prev.netProfit;
+        const arrow = revDiff >= 0 ? '▲' : '▼';
+        const col   = revDiff >= 0 ? 'var(--green)' : 'var(--red)';
+        const prevDate = new Date(waStr + 'T00:00:00').toLocaleDateString('ru-RU', {day:'numeric', month:'short', weekday:'short'});
+        compareHtml = `
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px;">
+            <div class="chart-title" style="margin-bottom:12px;">📅 Сравнение с прошлой неделей (${prevDate})</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">
+              <div>
+                <div style="font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Выручка</div>
+                <div style="font-size:18px;font-weight:700;color:var(--text)">${fmt(d.totalRevenue)}</div>
+                <div style="font-size:12px;color:${col};margin-top:2px;">${arrow} ${fmt(Math.abs(revDiff))} (${Math.abs(revPct).toFixed(1)}%)</div>
+                <div style="font-size:11px;color:var(--text2);">было ${fmt(prev.totalRevenue)}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Прибыль</div>
+                <div style="font-size:18px;font-weight:700;color:var(--green)">${fmt(d.netProfit)}</div>
+                <div style="font-size:12px;color:${profDiff>=0?'var(--green)':'var(--red)'};margin-top:2px;">${profDiff>=0?'▲':'▼'} ${fmt(Math.abs(profDiff))}</div>
+                <div style="font-size:11px;color:var(--text2);">было ${fmt(prev.netProfit)}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Маржа</div>
+                <div style="font-size:18px;font-weight:700;color:var(--text)">${d.margin.toFixed(1)}%</div>
+                <div style="font-size:12px;color:${d.margin>=prev.margin?'var(--green)':'var(--red)'};margin-top:2px;">${d.margin>=prev.margin?'▲':'▼'} ${Math.abs(d.margin-prev.margin).toFixed(1)}%</div>
+                <div style="font-size:11px;color:var(--text2);">было ${prev.margin.toFixed(1)}%</div>
+              </div>
+            </div>
+          </div>`;
+      }
+    }
+  } catch(e) {}
+
+  // Погода через Open-Meteo (бесплатно, без ключа)
+  let weatherHtml = '';
+  try {
+    // Углич, Ярославская область
+    const lat = 57.527, lon = 38.332;
+    const dateStr = d.date || new Date().toISOString().split('T')[0];
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Europe%2FMoscow&start_date=${dateStr}&end_date=${dateStr}`;
+    const resp = await fetch(url);
+    const wdata = await resp.json();
+    if (wdata.daily) {
+      const code  = wdata.daily.weathercode[0];
+      const tmax  = wdata.daily.temperature_2m_max[0];
+      const tmin  = wdata.daily.temperature_2m_min[0];
+      const rain  = wdata.daily.precipitation_sum[0];
+      const icon  = weatherIcon(code);
+      const desc  = weatherDesc(code);
+      const rainNote = rain > 2 ? ` · дождь ${rain.toFixed(0)} мм` : rain > 0 ? ` · небольшой дождь` : '';
+      weatherHtml = `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;">
+          <div style="font-size:36px;">${icon}</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--text);">${desc}${rainNote}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:3px;">+${tmax}° / +${tmin}° · Углич</div>
+            ${rain > 3 ? '<div style="font-size:11px;color:var(--accent);margin-top:3px;">☔ Дождь мог снизить трафик</div>' : ''}
+          </div>
+        </div>`;
+    }
+  } catch(e) {}
+
+  el.innerHTML = weatherHtml + compareHtml;
+}
+
+function weatherIcon(code) {
+  if (code === 0) return '☀️';
+  if (code <= 2) return '⛅';
+  if (code <= 3) return '☁️';
+  if (code <= 49) return '🌫️';
+  if (code <= 59) return '🌦️';
+  if (code <= 69) return '🌧️';
+  if (code <= 79) return '❄️';
+  if (code <= 82) return '🌧️';
+  if (code <= 86) return '🌨️';
+  if (code <= 99) return '⛈️';
+  return '🌡️';
+}
+function weatherDesc(code) {
+  if (code === 0) return 'Ясно';
+  if (code <= 2) return 'Переменная облачность';
+  if (code <= 3) return 'Пасмурно';
+  if (code <= 49) return 'Туман';
+  if (code <= 59) return 'Морось';
+  if (code <= 69) return 'Дождь';
+  if (code <= 79) return 'Снег';
+  if (code <= 82) return 'Ливень';
+  if (code <= 86) return 'Снегопад';
+  if (code <= 99) return 'Гроза';
+  return 'Особые условия';
+}
 rebuildAll();
 renderStaffChips();
 document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
