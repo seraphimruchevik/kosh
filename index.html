@@ -576,12 +576,7 @@ function toggleStaff(name) {
   if (selectedStaff.includes(name)) {
     selectedStaff = selectedStaff.filter(n => n !== name);
   } else {
-    if (selectedStaff.length >= 2) {
-      // убираем первого, добавляем нового
-      selectedStaff = [selectedStaff[1], name];
-    } else {
-      selectedStaff = [...selectedStaff, name];
-    }
+    selectedStaff = [...selectedStaff, name];
   }
   renderStaffChips();
 }
@@ -1028,15 +1023,20 @@ function renderResults(d) {
     <!-- МАРЖА ПО КАТЕГОРИЯМ -->
     ${catKeys.length ? `<div class="cat-margin-block"><div class="chart-title">📊 Прибыль и маржа по категориям</div>${catMarginRows}</div>` : ''}
 
-    <!-- ГРАФИКИ -->
-    <div class="chart-row">
-      <div class="chart-wrap">
-        <div class="chart-title">Выручка и прибыль</div>
-        <div style="position:relative;height:200px;"><canvas id="catChart"></canvas></div>
-      </div>
-      <div class="chart-wrap">
-        <div class="chart-title">Структура выручки</div>
-        <div style="position:relative;height:200px;"><canvas id="structChart"></canvas></div>
+    <!-- ГРАФИКИ (скрыты по умолчанию) -->
+    <div class="section-block" style="margin-bottom:14px;">
+      <div class="section-header collapsed" onclick="toggleSection(this)" style="background:var(--bg3);padding:12px 18px;">📈 Графики<span class="toggle-icon">▼</span></div>
+      <div class="section-body hidden" style="padding:14px;">
+        <div class="chart-row">
+          <div class="chart-wrap" style="margin-bottom:0">
+            <div class="chart-title">Выручка и прибыль</div>
+            <div style="position:relative;height:200px;"><canvas id="catChart"></canvas></div>
+          </div>
+          <div class="chart-wrap" style="margin-bottom:0">
+            <div class="chart-title">Структура выручки</div>
+            <div style="position:relative;height:200px;"><canvas id="structChart"></canvas></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1293,6 +1293,7 @@ async function renderHistory() {
               <td>
                 <div class="history-row-btns">
                   <button class="btn-open" onclick="loadFromCache('${rep.date}')">Открыть</button>
+                  <button class="btn-open" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="editReport('${rep.date}')">✏️ Изменить</button>
                   <button class="btn-del" onclick="deleteReport('${delId}')" title="Удалить">🗑</button>
                 </div>
               </td>
@@ -1306,7 +1307,44 @@ async function renderHistory() {
 function loadFromCache(date) {
   const rep = (cachedReports||[]).find(r => r.date === date)
            || JSON.parse(localStorage.getItem('kosh_reports')||'[]').find(r => r.date === date);
-  if (rep) { lastResult = rep; renderResults(lastResult); switchTab('results'); }
+  if (!rep) return;
+  lastResult = rep;
+  renderResults(lastResult);
+  switchTab('results');
+}
+
+function editReport(date) {
+  const rep = (cachedReports||[]).find(r => r.date === date)
+           || JSON.parse(localStorage.getItem('kosh_reports')||'[]').find(r => r.date === date);
+  if (!rep) return;
+  // Заполняем форму ввода из сохранённого отчёта
+  document.getElementById('reportDate').value = rep.date || '';
+  document.getElementById('cash').value = rep.cash || 0;
+  document.getElementById('card').value = rep.card || 0;
+  document.getElementById('expenses').value = rep.expenses || 0;
+  document.getElementById('notes').value = rep.notes || '';
+  document.getElementById('visitors').value = rep.visitors || '';
+  // Дежурные
+  if (rep.staff) {
+    selectedStaff = rep.staff.split(' + ').filter(s => STAFF_LIST.includes(s));
+    renderStaffChips();
+  }
+  // Сбрасываем все qty
+  Object.keys(QTY).forEach(k => { QTY[k] = 0; });
+  document.querySelectorAll('.qty-input').forEach(el => { el.value = ''; el.className = 'qty-input'; });
+  // Восстанавливаем qty из soldItems
+  if (rep.soldItems) {
+    rep.soldItems.forEach(item => {
+      if (item.custom) return; // кастомные не восстанавливаем в меню
+      ['hot','cold','food','shop'].forEach(prefix => {
+        MENU[prefix].forEach((mi, idx) => {
+          if (mi.name === item.name) setQty(prefix, idx, item.qty);
+        });
+      });
+    });
+  }
+  switchTab('input');
+  setTimeout(() => alert('✏️ Данные загружены в форму.\nИзмени нужные цифры и нажми «Рассчитать», затем «Сохранить» — отчёт перезапишется.'), 200);
 }
 
 function loadReport(idx) {
@@ -1320,17 +1358,64 @@ function loadReport(idx) {
 // ИТОГИ ПЕРИОДА
 // ============================================================
 function getWeekStart(date) {
-  const d = new Date(date); const day = d.getDay()||7;
-  d.setDate(d.getDate()-day+1); return d.toISOString().split('T')[0];
+  const d = new Date(date);
+  const day = d.getDay() === 0 ? 7 : d.getDay();
+  d.setDate(d.getDate() - day + 1);
+  return d.toISOString().split('T')[0];
+}
+
+function buildPeriodCopyText(title, reps, weekdayStats, weekendStats, short) {
+  const totRev    = reps.reduce((s,r)=>s+(r.totalRevenue||0),0);
+  const totProfit = reps.reduce((s,r)=>s+(r.netProfit||0),0);
+  const avgMargin = reps.reduce((s,r)=>s+(r.margin||0),0)/reps.length;
+  if (short) {
+    const lines = [
+      `📅 ${title}`,
+      `💰 Выручка: ${fmt(totRev)} (ср. ${fmt(Math.round(totRev/reps.length))}/день)`,
+      `✅ Прибыль: ${fmt(totProfit)} · маржа ${avgMargin.toFixed(1)}%`,
+    ];
+    if (weekdayStats.days>0) lines.push(`📆 Будни (${weekdayStats.days}д): ср. выр. ${fmt(Math.round(weekdayStats.rev/weekdayStats.days))}, приб. ${fmt(Math.round(weekdayStats.profit/weekdayStats.days))}`);
+    if (weekendStats.days>0) lines.push(`🎉 Выходные (${weekendStats.days}д): ср. выр. ${fmt(Math.round(weekendStats.rev/weekendStats.days))}, приб. ${fmt(Math.round(weekendStats.profit/weekendStats.days))}`);
+    return lines.join('\n');
+  } else {
+    const lines = [
+      `📅 ${title} · ${reps.length} дней`, ``,
+      `💰 Выручка итого:  ${fmt(totRev)}`,
+      `   Ср./день:       ${fmt(Math.round(totRev/reps.length))}`,
+      `✅ Чист. прибыль:  ${fmt(totProfit)}`,
+      `   Ср. маржа:      ${avgMargin.toFixed(1)}%`, ``,
+    ];
+    if (weekdayStats.days>0) { lines.push(`📆 Будни (${weekdayStats.days} дн.):`); lines.push(`   Ср. выручка: ${fmt(Math.round(weekdayStats.rev/weekdayStats.days))}`); lines.push(`   Ср. прибыль: ${fmt(Math.round(weekdayStats.profit/weekdayStats.days))}`); }
+    if (weekendStats.days>0) { lines.push(`🎉 Выходные (${weekendStats.days} дн.):`); lines.push(`   Ср. выручка: ${fmt(Math.round(weekendStats.rev/weekendStats.days))}`); lines.push(`   Ср. прибыль: ${fmt(Math.round(weekendStats.profit/weekendStats.days))}`); }
+    lines.push('', '📋 По дням:');
+    const DAYS2 = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+    reps.forEach(rep => {
+      const d2 = rep.date ? new Date(rep.date+'T00:00:00') : null;
+      const dn = d2 ? DAYS2[d2.getDay()] : '';
+      lines.push(`  ${rep.date} ${dn} ${rep.staff||''}: выр. ${fmt(rep.totalRevenue)} / приб. ${fmt(rep.netProfit)}`);
+    });
+    return lines.join('\n');
+  }
+}
+
+function copyPeriodText(safeKey, short) {
+  const btn = document.getElementById(`cpbtn_${short?'s':'f'}_${safeKey}`);
+  const text = btn ? btn.dataset.text : '';
+  if (!text) return;
+  const done = () => { if(btn){const orig=btn.textContent; btn.textContent='✅'; setTimeout(()=>{btn.textContent=orig;},2000);} };
+  navigator.clipboard.writeText(text).then(done).catch(()=>{
+    const ta=document.createElement('textarea'); ta.value=text; ta.style.cssText='position:fixed;opacity:0;';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done();
+  });
 }
 
 async function renderPeriod(period) {
   const el2 = document.getElementById(period+'-content');
   el2.innerHTML = '<div class="empty-state"><div class="icon"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div><p style="margin-top:12px">Загружаю...</p></div>';
   const reports = await getReports();
-  const el = document.getElementById(period+'-content');
+
   if (!reports.length) {
-    el.innerHTML = '<div class="empty-state"><div class="icon">'+(period==='week'?'📆':'🗓️')+'</div><p>Нет сохранённых отчётов</p></div>';
+    el2.innerHTML = '<div class="empty-state"><div class="icon">'+(period==='week'?'📆':'🗓️')+'</div><p>Нет сохранённых отчётов</p></div>';
     return;
   }
 
@@ -1343,62 +1428,51 @@ async function renderPeriod(period) {
   });
 
   const sortedKeys = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
-
-  // Рейтинг персонала
-  const staffStats = {};
-  reports.forEach(rep => {
-    if (!rep.staff) return;
-    if (!staffStats[rep.staff]) staffStats[rep.staff] = { days:0, totalRev:0, totalVisitors:0 };
-    staffStats[rep.staff].days++;
-    staffStats[rep.staff].totalRev += rep.totalRevenue||0;
-    staffStats[rep.staff].totalVisitors += rep.visitors||0;
-  });
-  const staffRows = Object.entries(staffStats)
-    .map(([name,s]) => ({ name, ...s, rpv: s.totalVisitors>0 ? s.totalRev/s.totalVisitors : 0 }))
-    .sort((a,b) => b.rpv - a.rpv);
-  const maxRPV = staffRows[0]?.rpv || 1;
-
-  const staffSection = staffRows.length ? `
-    <div class="summary-section">
-      <div class="summary-title">👤 Рейтинг персонала — выручка на посетителя</div>
-      ${staffRows.map((s,i) => `
-        <div class="staff-lb-row">
-          <div class="staff-lb-rank ${i===0?'top1':''}">${i+1}</div>
-          <div class="staff-lb-name">${s.name}</div>
-          <div class="staff-lb-bar-wrap">
-            <div class="staff-lb-bar-bg"><div class="staff-lb-bar-fill" style="width:${(s.rpv/maxRPV*100).toFixed(0)}%"></div></div>
-          </div>
-          <div class="staff-lb-info">
-            ${s.rpv>0?fmt(s.rpv)+'/чел':'—'}<br>
-            <span style="font-size:11px">${s.days} смен · ${fmt(s.totalRev)}</span>
-          </div>
-        </div>`).join('')}
-      <div style="font-size:12px;color:var(--text2);margin-top:10px;">* Рейтинг по выручке на посетителя — учитывает разный трафик в будни/выходные</div>
-    </div>` : '';
+  const WEEKEND = [0,6];
 
   const periodsHtml = sortedKeys.map(key => {
-    const reps       = groups[key];
-    const totRev     = reps.reduce((s,r)=>s+(r.totalRevenue||0),0);
-    const totProfit  = reps.reduce((s,r)=>s+(r.netProfit||0),0);
-    const totVisit   = reps.reduce((s,r)=>s+(r.visitors||0),0);
-    const avgMargin  = reps.reduce((s,r)=>s+(r.margin||0),0)/reps.length;
+    const reps      = groups[key];
+    const totRev    = reps.reduce((s,r)=>s+(r.totalRevenue||0),0);
+    const totProfit = reps.reduce((s,r)=>s+(r.netProfit||0),0);
+    const totVisit  = reps.reduce((s,r)=>s+(r.visitors||0),0);
+    const avgMargin = reps.reduce((s,r)=>s+(r.margin||0),0)/reps.length;
+
+    const weekdayStats = {days:0,rev:0,profit:0};
+    const weekendStats = {days:0,rev:0,profit:0};
+    reps.forEach(rep => {
+      if (!rep.date) return;
+      const dow = new Date(rep.date+'T00:00:00').getDay();
+      if (WEEKEND.includes(dow)) { weekendStats.days++; weekendStats.rev+=rep.totalRevenue||0; weekendStats.profit+=rep.netProfit||0; }
+      else { weekdayStats.days++; weekdayStats.rev+=rep.totalRevenue||0; weekdayStats.profit+=rep.netProfit||0; }
+    });
 
     let title;
     if (period==='week') {
-      const ws=new Date(key+'T00:00:00'),we=new Date(ws); we.setDate(we.getDate()+6);
-      title=`${ws.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})} – ${we.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})}`;
+      const ws=new Date(key+'T00:00:00'), we=new Date(ws); we.setDate(ws.getDate()+6);
+      title=`Неделя ${ws.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})}–${we.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})}`;
     } else {
-      title=new Date(key+'-01T00:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'});
+      const mn = new Date(key+'-01T00:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'});
+      title = mn.charAt(0).toUpperCase()+mn.slice(1);
     }
+
+    const safeKey   = key.replace(/[^a-z0-9]/gi,'_');
+    const shortText = buildPeriodCopyText(title, reps, weekdayStats, weekendStats, true);
+    const fullText  = buildPeriodCopyText(title, reps, weekdayStats, weekendStats, false);
 
     return `
       <div class="summary-section">
-        <div class="summary-title">${period==='week'?'📆':'🗓️'} ${title} · ${reps.length} дн.</div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+          <div class="summary-title" style="margin-bottom:0;">${period==='week'?'📆':'🗓️'} ${title} · ${reps.length} дн.</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button id="cpbtn_s_${safeKey}" data-text="${shortText.replace(/\\/g,'\\\\').replace(/"/g,'&quot;').replace(/\n/g,'\\n')}" onclick="copyPeriodText('${safeKey}',true)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">📋 Кратко</button>
+            <button id="cpbtn_f_${safeKey}" data-text="${fullText.replace(/\\/g,'\\\\').replace(/"/g,'&quot;').replace(/\n/g,'\\n')}" onclick="copyPeriodText('${safeKey}',false)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">📋 Полностью</button>
+          </div>
+        </div>
         <div class="metrics-grid" style="margin-bottom:12px;">
           <div class="metric-card">
             <div class="metric-label">Выручка</div>
             <div class="metric-value">${fmt(totRev)}</div>
-            <div class="metric-sub">Ср./день: ${fmt(totRev/reps.length)}</div>
+            <div class="metric-sub">Ср./день: ${fmt(Math.round(totRev/reps.length))}</div>
           </div>
           <div class="metric-card">
             <div class="metric-label">Чистая прибыль</div>
@@ -1406,34 +1480,33 @@ async function renderPeriod(period) {
             <div class="metric-sub">Ср. маржа: ${avgMargin.toFixed(1)}%</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Посетители</div>
-            <div class="metric-value">${totVisit>0?totVisit:'—'}</div>
-            <div class="metric-sub">${totVisit>0?'Ср./день: '+Math.round(totVisit/reps.length):'не фиксировались'}</div>
+            <div class="metric-label">📆 Будни ср./день</div>
+            <div class="metric-value" style="font-size:17px">${weekdayStats.days>0?fmt(Math.round(weekdayStats.rev/weekdayStats.days)):'—'}</div>
+            <div class="metric-sub">${weekdayStats.days>0?'прибыль '+fmt(Math.round(weekdayStats.profit/weekdayStats.days))+' · '+weekdayStats.days+' дн.':'нет данных'}</div>
           </div>
+          <div class="metric-card">
+            <div class="metric-label">🎉 Выходные ср./день</div>
+            <div class="metric-value" style="font-size:17px">${weekendStats.days>0?fmt(Math.round(weekendStats.rev/weekendStats.days)):'—'}</div>
+            <div class="metric-sub">${weekendStats.days>0?'прибыль '+fmt(Math.round(weekendStats.profit/weekendStats.days))+' · '+weekendStats.days+' дн.':'нет данных'}</div>
+          </div>
+          ${totVisit>0?`<div class="metric-card"><div class="metric-label">Посетители</div><div class="metric-value">${totVisit}</div><div class="metric-sub">Ср./день: ${Math.round(totVisit/reps.length)}</div></div>`:''}
         </div>
         <div style="overflow-x:auto;">
           <table class="breakdown-table" style="width:100%">
             <tr><th>Дата</th><th>Дежурный</th><th style="text-align:right">Посет.</th><th style="text-align:right">Выручка</th><th style="text-align:right">Прибыль</th><th style="text-align:right">Маржа</th><th style="text-align:right">Ср. чек</th></tr>
-            ${reps.map(rep => {
-              const dd = rep.date ? new Date(rep.date+'T00:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short',weekday:'short'}) : '—';
-              const pc = (rep.netProfit||0)>=0?'var(--green)':'var(--red)';
-              return `<tr>
-                <td>${dd}</td>
-                <td>${rep.staff||'—'}</td>
-                <td style="text-align:right">${rep.visitors||'—'}</td>
-                <td style="text-align:right">${fmt(rep.totalRevenue)}</td>
-                <td style="text-align:right;color:${pc}"><b>${fmt(rep.netProfit)}</b></td>
-                <td style="text-align:right">${rep.margin.toFixed(1)}%</td>
-                <td style="text-align:right">${fmt(rep.avgCheck)}</td>
-              </tr>`;
+            ${reps.map(rep=>{
+              const dd=rep.date?new Date(rep.date+'T00:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short',weekday:'short'}):'—';
+              const pc=(rep.netProfit||0)>=0?'var(--green)':'var(--red)';
+              return `<tr><td>${dd}</td><td style="font-size:12px">${rep.staff||'—'}</td><td style="text-align:right">${rep.visitors||'—'}</td><td style="text-align:right">${fmt(rep.totalRevenue)}</td><td style="text-align:right;color:${pc}"><b>${fmt(rep.netProfit)}</b></td><td style="text-align:right">${(rep.margin||0).toFixed(1)}%</td><td style="text-align:right">${fmt(rep.avgCheck||rep.avgCheckPerItem||0)}</td></tr>`;
             }).join('')}
           </table>
         </div>
       </div>`;
   }).join('');
 
-  el.innerHTML = staffSection + periodsHtml;
+  el2.innerHTML = periodsHtml;
 }
+
 
 // ============================================================
 // ЭКСПОРТ В EXCEL (CSV совместимый — открывается в Excel)
@@ -1543,6 +1616,61 @@ async function exportExcel() {
   // Генерируем три отдельных CSV и упаковываем в один файл через разные секции
   // Используем xlsx через SheetJS если доступен, иначе CSV
   if (typeof XLSX !== 'undefined') {
+    // Добавляем итоговые строки
+    const dayTotals = ['ИТОГО', '', '', 
+      sorted.reduce((s,r)=>s+(r.visitors||0),0),
+      Math.round(sorted.reduce((s,r)=>s+(r.totalRevenue||0),0)),
+      Math.round(sorted.reduce((s,r)=>s+(r.totalCost||0),0)),
+      Math.round(sorted.reduce((s,r)=>s+(r.grossProfit||0),0)),
+      '',
+      Math.round(sorted.reduce((s,r)=>s+(r.expenses||0),0)),
+      Math.round(sorted.reduce((s,r)=>s+(r.netProfit||0),0)),
+      '', sorted.reduce((s,r)=>s+(r.totalItems||0),0), '', ''
+    ];
+    // Маржа итого
+    const dTotRev = sorted.reduce((s,r)=>s+(r.totalRevenue||0),0);
+    const dTotGp  = sorted.reduce((s,r)=>s+(r.grossProfit||0),0);
+    const dTotNp  = sorted.reduce((s,r)=>s+(r.netProfit||0),0);
+    const dTotIt  = sorted.reduce((s,r)=>s+(r.totalItems||0),0);
+    dayTotals[7]  = dTotRev>0?+((dTotGp/dTotRev*100).toFixed(1)):0;
+    dayTotals[10] = dTotRev>0?+((dTotNp/dTotRev*100).toFixed(1)):0;
+    dayTotals[12] = dTotIt>0?Math.round(dTotRev/dTotIt):0;
+    dayRows.push(dayTotals);
+
+    // Неделя итоги
+    const wkData = weekRows.slice(1);
+    if (wkData.length) {
+      const wTotRev = wkData.reduce((s,r)=>s+(r[4]||0),0);
+      const wTotGp  = wkData.reduce((s,r)=>s+(r[5]||0),0);
+      const wTotNp  = wkData.reduce((s,r)=>s+(r[8]||0),0);
+      const wTotDays= wkData.reduce((s,r)=>s+(r[2]||0),0);
+      weekRows.push(['ИТОГО','',wTotDays,wkData.reduce((s,r)=>s+(r[3]||0),0),
+        Math.round(wTotRev),Math.round(wTotGp),
+        wTotRev>0?+((wTotGp/wTotRev*100).toFixed(1)):0,
+        Math.round(wkData.reduce((s,r)=>s+(r[7]||0),0)),
+        Math.round(wTotNp),
+        wTotRev>0?+((wTotNp/wTotRev*100).toFixed(1)):0,
+        wTotDays>0?Math.round(wTotRev/wTotDays):0
+      ]);
+    }
+
+    // Месяц итоги
+    const moData = monthRows.slice(1);
+    if (moData.length) {
+      const mTotRev = moData.reduce((s,r)=>s+(r[3]||0),0);
+      const mTotGp  = moData.reduce((s,r)=>s+(r[4]||0),0);
+      const mTotNp  = moData.reduce((s,r)=>s+(r[7]||0),0);
+      const mTotDays= moData.reduce((s,r)=>s+(r[1]||0),0);
+      monthRows.push(['ИТОГО',mTotDays,moData.reduce((s,r)=>s+(r[2]||0),0),
+        Math.round(mTotRev),Math.round(mTotGp),
+        mTotRev>0?+((mTotGp/mTotRev*100).toFixed(1)):0,
+        Math.round(moData.reduce((s,r)=>s+(r[6]||0),0)),
+        Math.round(mTotNp),
+        mTotRev>0?+((mTotNp/mTotRev*100).toFixed(1)):0,
+        mTotDays>0?Math.round(mTotRev/mTotDays):0,''
+      ]);
+    }
+
     const wb2 = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(dayRows), 'Все дни');
     XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(weekRows), 'По неделям');
@@ -1619,8 +1747,8 @@ async function loadWeatherAndCompare(d) {
   // Погода через Open-Meteo (бесплатно, без ключа)
   let weatherHtml = '';
   try {
-    // Углич, Ярославская область
-    const lat = 57.527, lon = 38.332;
+    // Тутаев, Ярославская область
+    const lat = 57.889, lon = 39.542;
     const dateStr = d.date || new Date().toISOString().split('T')[0];
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Europe%2FMoscow&start_date=${dateStr}&end_date=${dateStr}`;
     const resp = await fetch(url);
@@ -1638,7 +1766,7 @@ async function loadWeatherAndCompare(d) {
           <div style="font-size:36px;">${icon}</div>
           <div>
             <div style="font-size:13px;font-weight:700;color:var(--text);">${desc}${rainNote}</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:3px;">+${tmax}° / +${tmin}° · Углич</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:3px;">+${tmax}° / +${tmin}° · Тутаев</div>
             ${rain > 3 ? '<div style="font-size:11px;color:var(--accent);margin-top:3px;">☔ Дождь мог снизить трафик</div>' : ''}
           </div>
         </div>`;
