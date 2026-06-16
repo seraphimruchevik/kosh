@@ -359,6 +359,14 @@
 <!-- ВВОД -->
 <div class="panel active" id="panel-input">
 
+  <div style="position:relative;margin-bottom:12px;">
+    <input type="text" id="menuSearch" placeholder="Поиск позиции..." oninput="filterMenu(this.value)"
+      style="width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);border-radius:10px;padding:10px 14px 10px 36px;font-size:14px;outline:none;">
+    <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text2);pointer-events:none;">🔍</span>
+    <button onclick="clearSearch()" id="searchClear" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;padding:2px 6px;">✕</button>
+  </div>
+  <div id="searchResults" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow);"></div>
+
   <div class="section-block">
     <div class="section-header" onclick="toggleSection(this)">☕ ГОРЯЧИЕ НАПИТКИ<span class="toggle-icon">▼</span></div>
     <div class="section-body">
@@ -822,7 +830,7 @@ function buildSimpleText(d) {
     `✅ Чистая прибыль: ${fmt(d.netProfit)} (${netPct}%)`,
     `🧾 Расходы:        ${fmt(d.expenses)}`,
     '',
-    d.visitors > 0 ? `🧮 Средний чек: ${fmt(d.avgCheck)} / посетителя` : `🧮 Средний чек: ${fmt(d.avgCheck)}`,
+    d.visitors > 0 ? `🧮 Ср. чек/чел: ${fmt(d.avgCheckPerVisit)}` : `🧮 Ср. чек/поз: ${fmt(d.avgCheckPerItem)}`,
     `💵 Нал: ${fmt(d.cash)}  💳 Безнал: ${fmt(d.card)}`,
     '',
     '📊 По категориям:',
@@ -937,7 +945,7 @@ function renderResults(d) {
 
     <!-- КРАТКИЕ ИТОГИ -->
     <div class="simple-block">
-      <div class="simple-title">☕ КоШ — краткие итоги${d.staff ? ' · ' + d.staff : ''}</div>
+      <div class="simple-title">☕ КоШ — краткие итоги${d.staff ? ' · ' + d.staff : ''} <span id='day-weather-short' style='font-size:12px;color:var(--text2);font-weight:400;'></span></div>
       <div class="simple-main">
         <div>
           <div class="simple-stat-label">Выручка</div>
@@ -952,7 +960,7 @@ function renderResults(d) {
         <div>
           <div class="simple-stat-label">Посетителей</div>
           <div class="simple-stat-value">${d.visitors > 0 ? d.visitors : '—'}</div>
-          <div class="simple-stat-pct">Ср. чек/поз: ${fmt(d.avgCheckPerItem)}${d.avgCheckPerVisit > 0 ? '<br>~' + fmt(d.avgCheckPerVisit) + '/посет.' : ''}</div>
+          <div class="simple-stat-pct">${d.avgCheckPerVisit > 0 ? 'Ср. чек/чел: ' + fmt(d.avgCheckPerVisit) + '<br>' : ''}Ср. чек/поз: ${fmt(d.avgCheckPerItem)}</div>
         </div>
         <div>
           <div class="simple-stat-label">Позиций</div>
@@ -1106,6 +1114,7 @@ function renderResults(d) {
 
   // Погода
   loadWeatherAndCompare(d);
+  loadWeekTotals(d);
 
   setTimeout(() => {
     const chartColors = ['#d4864a','#4caf72','#5a9fd4'];
@@ -1398,14 +1407,14 @@ function buildPeriodCopyText(title, reps, weekdayStats, weekendStats, short) {
   }
 }
 
+const PCT={};
 function copyPeriodText(safeKey, short) {
-  const btn = document.getElementById(`cpbtn_${short?'s':'f'}_${safeKey}`);
-  const text = btn ? btn.dataset.text : '';
-  if (!text) return;
-  const done = () => { if(btn){const orig=btn.textContent; btn.textContent='✅'; setTimeout(()=>{btn.textContent=orig;},2000);} };
+  const text = PCT[(short?'s':'f')+'_'+safeKey]||'';
+  const btn = document.getElementById('cpbtn_'+(short?'s':'f')+'_'+safeKey);
+  const done = () => { if(btn){const o=btn.textContent;btn.textContent='✅';setTimeout(()=>{btn.textContent=o;},2000);} };
   navigator.clipboard.writeText(text).then(done).catch(()=>{
-    const ta=document.createElement('textarea'); ta.value=text; ta.style.cssText='position:fixed;opacity:0;';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done();
+    const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0;';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
   });
 }
 
@@ -1458,14 +1467,15 @@ async function renderPeriod(period) {
     const safeKey   = key.replace(/[^a-z0-9]/gi,'_');
     const shortText = buildPeriodCopyText(title, reps, weekdayStats, weekendStats, true);
     const fullText  = buildPeriodCopyText(title, reps, weekdayStats, weekendStats, false);
+    PCT['s_'+safeKey]=shortText; PCT['f_'+safeKey]=fullText;
 
     return `
       <div class="summary-section">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
           <div class="summary-title" style="margin-bottom:0;">${period==='week'?'📆':'🗓️'} ${title} · ${reps.length} дн.</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button id="cpbtn_s_${safeKey}" data-text="${shortText.replace(/\\/g,'\\\\').replace(/"/g,'&quot;').replace(/\n/g,'\\n')}" onclick="copyPeriodText('${safeKey}',true)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">📋 Кратко</button>
-            <button id="cpbtn_f_${safeKey}" data-text="${fullText.replace(/\\/g,'\\\\').replace(/"/g,'&quot;').replace(/\n/g,'\\n')}" onclick="copyPeriodText('${safeKey}',false)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">📋 Полностью</button>
+            <button id="cpbtn_s_${safeKey}" onclick="copyPeriodText('${safeKey}',true)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">📋 Кратко</button>
+            <button id="cpbtn_f_${safeKey}" onclick="copyPeriodText('${safeKey}',false)" style="background:var(--bg4);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">📋 Полностью</button>
           </div>
         </div>
         <div class="metrics-grid" style="margin-bottom:12px;">
@@ -1493,11 +1503,12 @@ async function renderPeriod(period) {
         </div>
         <div style="overflow-x:auto;">
           <table class="breakdown-table" style="width:100%">
-            <tr><th>Дата</th><th>Дежурный</th><th style="text-align:right">Посет.</th><th style="text-align:right">Выручка</th><th style="text-align:right">Прибыль</th><th style="text-align:right">Маржа</th><th style="text-align:right">Ср. чек</th></tr>
+            <tr><th>Дата</th><th>Погода</th><th>Дежурный</th><th style="text-align:right">Посет.</th><th style="text-align:right">Выручка</th><th style="text-align:right">Прибыль</th><th style="text-align:right">Маржа</th><th style="text-align:right">Ср. чек</th></tr>
             ${reps.map(rep=>{
               const dd=rep.date?new Date(rep.date+'T00:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short',weekday:'short'}):'—';
               const pc=(rep.netProfit||0)>=0?'var(--green)':'var(--red)';
-              return `<tr><td>${dd}</td><td style="font-size:12px">${rep.staff||'—'}</td><td style="text-align:right">${rep.visitors||'—'}</td><td style="text-align:right">${fmt(rep.totalRevenue)}</td><td style="text-align:right;color:${pc}"><b>${fmt(rep.netProfit)}</b></td><td style="text-align:right">${(rep.margin||0).toFixed(1)}%</td><td style="text-align:right">${fmt(rep.avgCheck||rep.avgCheckPerItem||0)}</td></tr>`;
+              const wthId='rdwth_'+rep.date;
+              return `<tr><td>${dd}</td><td><span id="${wthId}" style="font-size:11px;color:var(--text2);">⏳</span></td><td style="font-size:12px">${rep.staff||'—'}</td><td style="text-align:right">${rep.visitors||'—'}</td><td style="text-align:right">${fmt(rep.totalRevenue)}</td><td style="text-align:right;color:${pc}"><b>${fmt(rep.netProfit)}</b></td><td style="text-align:right">${(rep.margin||0).toFixed(1)}%</td><td style="text-align:right">${fmt(rep.avgCheck||rep.avgCheckPerItem||0)}</td></tr>`;
             }).join('')}
           </table>
         </div>
@@ -1505,6 +1516,31 @@ async function renderPeriod(period) {
   }).join('');
 
   el2.innerHTML = periodsHtml;
+  // Погода для каждого дня в таблице
+  reports.forEach(rep => {
+    if (!rep.date) return;
+    getWeatherShort(rep.date).then(w => {
+      const el3=document.getElementById('rdwth_'+rep.date);
+      if (!el3) return;
+      if (!w) { el3.textContent='—'; return; }
+      el3.textContent=w.icon+' '+(w.tmax>0?'+':'')+Math.round(w.tmax)+'°'+(w.rain>2?' '+Math.round(w.rain)+'мм':'');
+    });
+  });
+  // Погода для каждого периода
+  sortedKeys.forEach(key => {
+    const safeKey = key.replace(/[^a-z0-9]/gi,'_');
+    const reps2 = groups[key];
+    const dates = reps2.map(r=>r.date).filter(Boolean).sort();
+    if (!dates.length) return;
+    const d1=dates[0], d2=dates[dates.length-1];
+    Promise.all([getWeatherShort(d1), d1!==d2?getWeatherShort(d2):Promise.resolve(null)]).then(([w1,w2])=>{
+      const el3=document.getElementById('wth_'+safeKey);
+      if (!el3||!w1) return;
+      let t=w1.icon+' '+(w1.tmax>0?'+':'')+Math.round(w1.tmax)+'°'+(w1.rain>2?' дождь':'');
+      if (w2) t+=' → '+w2.icon+' '+(w2.tmax>0?'+':'')+Math.round(w2.tmax)+'°'+(w2.rain>2?' дождь':'');
+      el3.textContent='· '+t;
+    });
+  });
 }
 
 
@@ -1744,6 +1780,14 @@ async function loadWeatherAndCompare(d) {
     }
   } catch(e) {}
 
+  // Погода дня — показать кратко в итогах
+  if (d.date) {
+    getWeatherShort(d.date).then(w => {
+      const wbl = document.getElementById('day-weather-short');
+      if (wbl && w) wbl.textContent = wthText(w);
+    });
+  }
+
   // Погода через Open-Meteo (бесплатно, без ключа)
   let weatherHtml = '';
   try {
@@ -1776,6 +1820,19 @@ async function loadWeatherAndCompare(d) {
   el.innerHTML = weatherHtml + compareHtml;
 }
 
+
+const _WC={};
+async function getWeatherShort(dateStr) {
+  if (_WC[dateStr]!==undefined) return _WC[dateStr];
+  try {
+    const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=57.889&longitude=39.542&daily=weathercode,temperature_2m_max,precipitation_sum&timezone=Europe%2FMoscow&start_date='+dateStr+'&end_date='+dateStr);
+    const d=await r.json();
+    if(d.daily){const res={icon:weatherIcon(d.daily.weathercode[0]),tmax:d.daily.temperature_2m_max[0],rain:d.daily.precipitation_sum[0]};_WC[dateStr]=res;return res;}
+  } catch(e){}
+  _WC[dateStr]=null; return null;
+}
+function wthText(w){if(!w)return '';return w.icon+' '+(w.tmax>0?'+':'')+Math.round(w.tmax)+'°'+(w.rain>2?' 🌧':'');}
+
 function weatherIcon(code) {
   if (code === 0) return '☀️';
   if (code <= 2) return '⛅';
@@ -1802,6 +1859,72 @@ function weatherDesc(code) {
   if (code <= 99) return 'Гроза';
   return 'Особые условия';
 }
+
+function filterMenu(query) {
+  const q = query.trim().toLowerCase();
+  document.getElementById('searchClear').style.display = q ? 'block' : 'none';
+  const el = document.getElementById('searchResults');
+  if (!q) { el.style.display = 'none'; return; }
+  const matches = [];
+  ['hot','cold','food','shop'].forEach(prefix => {
+    MENU[prefix].forEach((item, idx) => {
+      if (item.name.toLowerCase().includes(q)) matches.push({prefix, idx, item});
+    });
+  });
+  if (!matches.length) {
+    el.style.display = 'block';
+    el.innerHTML = '<div style="padding:14px;color:var(--text2);font-size:13px;">Ничего не найдено</div>';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = matches.map(({prefix,idx,item}) => {
+    const qty = getQty(prefix,idx);
+    return `<div style="display:grid;grid-template-columns:1fr 96px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);">
+      <div><div style="font-size:13px;color:var(--text)">${item.name}</div><div style="font-size:11px;color:var(--text2)">${item.price} ₽</div></div>
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="decQty('${prefix}',${idx});refreshSQ('${prefix}',${idx})">−</button>
+        <input type="number" class="qty-input${qty>0?' nz':''}" id="sqv_${prefix}_${idx}" value="${qty||''}" placeholder="0" min="0" inputmode="numeric" oninput="onQtyInput('${prefix}',${idx},this);syncMain('${prefix}',${idx},this.value)">
+        <button class="qty-btn" onclick="incQty('${prefix}',${idx});refreshSQ('${prefix}',${idx})">+</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function syncMain(prefix,idx,val) {
+  const el=document.getElementById('qv_'+prefix+'_'+idx);
+  if(el){el.value=parseInt(val)>0?val:'';el.className='qty-input'+(parseInt(val)>0?' nz':'');}
+}
+function refreshSQ(prefix,idx) {
+  const qty=getQty(prefix,idx);
+  const s=document.getElementById('sqv_'+prefix+'_'+idx);
+  if(s){s.value=qty>0?qty:'';s.className='qty-input'+(qty>0?' nz':'');}
+  syncMain(prefix,idx,qty);
+}
+function clearSearch() {
+  document.getElementById('menuSearch').value='';
+  filterMenu('');
+}
+
+async function loadWeekTotals(d) {
+  if (!d.date) return;
+  const block = document.getElementById('week-totals-block');
+  if (!block) return;
+  try {
+    const cur = new Date(d.date+'T00:00:00');
+    const day = cur.getDay()===0?7:cur.getDay();
+    const mon = new Date(cur); mon.setDate(cur.getDate()-day+1);
+    const monStr = mon.toISOString().split('T')[0];
+    const reports = await getReports();
+    const weekReps = reports.filter(r => r.date && r.date >= monStr && r.date <= d.date);
+    if (!weekReps.length) return;
+    const totRev  = weekReps.reduce((s,r)=>s+(r.totalRevenue||0),0);
+    const totProf = weekReps.reduce((s,r)=>s+(r.netProfit||0),0);
+    document.getElementById('wt-rev').textContent = fmt(totRev);
+    document.getElementById('wt-prof').textContent = fmt(totProf);
+    document.getElementById('wt-prof').style.color = totProf>=0?'var(--green)':'var(--red)';
+    block.style.display = 'block';
+  } catch(e) {}
+}
+
 rebuildAll();
 renderStaffChips();
 document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
