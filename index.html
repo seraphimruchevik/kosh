@@ -1418,15 +1418,32 @@ function copyPeriodText(safeKey, short) {
   });
 }
 
-async function renderPeriod(period) {
+let _periodStaffFilter = { week: '', month: '' };
+
+async function renderPeriod(period, staffFilter) {
+  if (staffFilter !== undefined) _periodStaffFilter[period] = staffFilter;
   const el2 = document.getElementById(period+'-content');
   el2.innerHTML = '<div class="empty-state"><div class="icon"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div><p style="margin-top:12px">Загружаю...</p></div>';
-  const reports = await getReports();
+  const allReports = await getReports();
 
-  if (!reports.length) {
+  if (!allReports.length) {
     el2.innerHTML = '<div class="empty-state"><div class="icon">'+(period==='week'?'📆':'🗓️')+'</div><p>Нет сохранённых отчётов</p></div>';
     return;
   }
+
+  // Staff filter
+  const activeStaff = _periodStaffFilter[period]||'';
+  const reports = activeStaff
+    ? allReports.filter(r => r.staff && r.staff.split(' + ').includes(activeStaff))
+    : allReports;
+
+  // Get all unique staff for filter buttons
+  const allStaff = [...new Set(allReports.map(r=>r.staff).filter(Boolean).flatMap(s=>s.split(' + ')))].sort();
+  const filterHtml = `<div style="margin-bottom:14px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+    <span style="font-size:12px;color:var(--text2);">Дежурный:</span>
+    <button onclick="renderPeriod('${period}','')" style="padding:4px 12px;border-radius:16px;border:1px solid var(--border2);background:${!activeStaff?'var(--accent)':'var(--bg3)'};color:${!activeStaff?'#fff':'var(--text2)'};font-size:12px;cursor:pointer;font-weight:600;">Все</button>
+    ${allStaff.map(s=>`<button onclick="renderPeriod('${period}','${s}')" style="padding:4px 12px;border-radius:16px;border:1px solid var(--border2);background:${activeStaff===s?'var(--accent)':'var(--bg3)'};color:${activeStaff===s?'#fff':'var(--text2)'};font-size:12px;cursor:pointer;">${s}</button>`).join('')}
+  </div>`;
 
   const groups = {};
   reports.forEach(rep => {
@@ -1435,6 +1452,11 @@ async function renderPeriod(period) {
     if (!groups[key]) groups[key] = [];
     groups[key].push(rep);
   });
+
+  if (!Object.keys(groups).length) {
+    el2.innerHTML = filterHtml + '<div class="empty-state" style="padding:30px"><p>Нет данных для выбранного дежурного</p></div>';
+    return;
+  }
 
   const sortedKeys = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
   const WEEKEND = [0,6];
@@ -1515,7 +1537,7 @@ async function renderPeriod(period) {
       </div>`;
   }).join('');
 
-  el2.innerHTML = periodsHtml;
+  el2.innerHTML = filterHtml + periodsHtml;
   // Погода для каждого дня в таблице
   reports.forEach(rep => {
     if (!rep.date) return;
